@@ -98,3 +98,11 @@ add_library(dnl SHARED ${SRC_FILES} ${CU_SRC_FILES} ${cuda_objs})
 target_link_libraries(dnl ${LIBRARIES} ${OpenCV_LIBS})
 add_executable(darknet ${SRC_DIR}/darknet.c)
 target_link_libraries(darknet ${LIBRARIES} dnl)
+
+install(TARGETS darknet DESTINATION bin)
+install(TARGETS dnl DESTINATION lib)
+
+add_custom_target(install_${PROJECT_NAME}
+        $(MAKE) install
+        DEPENDS ${PROJECT_NAME}
+        COMMENT "Installing ${PROJECT_NAME}")
