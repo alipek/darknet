@@ -83,5 +83,7 @@ image get_image_layer(image m, int l);
 
 void free_image(image m);
 void test_resize(char *filename);
+void fill_image(image m, float s);
+image letterbox_image(image im, int w, int h);
 #endif
 

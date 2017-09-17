@@ -27,6 +27,7 @@
 #include "dropout_layer.h"
 #include "route_layer.h"
 #include "shortcut_layer.h"
+#include "parser.h"
 
 int get_current_batch(network net)
 {
@@ -586,6 +587,94 @@ float network_accuracy_multi(network net, data d, int n)
     float acc = matrix_topk_accuracy(d.y, guess,1);
     free_matrix(guess);
     return acc;
+}
+
+float *network_predict_image(network *net, image im)
+{
+  image imr = letterbox_image(im, net->w, net->h);
+  set_batch_network(net, 1);
+  float *p = network_predict(*net, imr.data);
+  free_image(imr);
+  return p;
+}
+
+int network_width(network *net){return net->w;}
+int network_height(network *net){return net->h;}
+
+void network_detect(network *net, image im, float thresh, float hier_thresh, float nms, box *boxes, float **probs)
+{
+  network_predict_image(net, im);
+  layer l = net->layers[net->n-1];
+  if(l.type == REGION){
+    get_region_boxes(l, im.w, im.h, /*net->w, net->h,*/ thresh, probs, boxes, 0, 0, 0, hier_thresh, 0);
+    if (nms) do_nms_sort(boxes, probs, l.w*l.h*l.n, l.classes, nms);
+  }
+}
+
+float *network_predict_p(network *net, float *input)
+{
+  return network_predict(*net, input);
+}
+
+int num_boxes(network *net)
+{
+  layer l = net->layers[net->n-1];
+  return l.w*l.h*l.n;
+}
+
+
+box *make_boxes(network *net)
+{
+  layer l = net->layers[net->n-1];
+  box *boxes = calloc(l.w*l.h*l.n, sizeof(box));
+  return boxes;
+}
+
+float **make_probs(network *net)
+{
+  int j;
+  layer l = net->layers[net->n-1];
+  float **probs = calloc(l.w*l.h*l.n, sizeof(float *));
+  for(j = 0; j < l.w*l.h*l.n; ++j) probs[j] = calloc(l.classes + 1, sizeof(float *));
+  return probs;
+}
+
+void reset_network_state(network net, int b)
+{
+  int i;
+  for (i = 0; i < net.n; ++i) {
+#ifdef GPU
+    layer l = net.layers[i];
+    if(l.state_gpu){
+      fill_gpu(l.outputs, 0, l.state_gpu + l.outputs*b, 1);
+    }
+    if(l.h_gpu){
+      fill_gpu(l.outputs, 0, l.h_gpu + l.outputs*b, 1);
+    }
+#endif
+  }
+}
+
+void reset_rnn(network *net)
+{
+  reset_network_state(*net, 0);
+}
+
+network load_network(char *cfg, char *weights, int clear)
+{
+  network net = parse_network_cfg(cfg);
+  if(weights && weights[0] != 0){
+    load_weights(&net, weights);
+  }
+  if(clear) *net.seen = 0;
+  return net;
+}
+
+network *load_network_p(char *cfg, char *weights, int clear)
+{
+  network *net = calloc(1, sizeof(network));
+  *net = load_network(cfg, weights, clear);
+  return net;
 }
 
 void free_network(network net)

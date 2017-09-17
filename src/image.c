@@ -1485,3 +1485,30 @@ void free_image(image m)
         free(m.data);
     }
 }
+
+void fill_image(image m, float s)
+{
+    int i;
+    for(i = 0; i < m.h*m.w*m.c; ++i) m.data[i] = s;
+}
+
+image letterbox_image(image im, int w, int h)
+{
+    int new_w = im.w;
+    int new_h = im.h;
+    if (((float)w/im.w) < ((float)h/im.h)) {
+        new_w = w;
+        new_h = (im.h * w)/im.w;
+    } else {
+        new_h = h;
+        new_w = (im.w * h)/im.h;
+    }
+    image resized = resize_image(im, new_w, new_h);
+    image boxed = make_image(w, h, im.c);
+    fill_image(boxed, .5);
+    //int i;
+    //for(i = 0; i < boxed.w*boxed.h*boxed.c; ++i) boxed.data[i] = 0;
+    embed_image(resized, boxed, (w-new_w)/2, (h-new_h)/2);
+    free_image(resized);
+    return boxed;
+}
