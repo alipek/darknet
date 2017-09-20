@@ -72,6 +72,11 @@ typedef struct{
     float left, right, top, bottom;
 } box_label;
 
+typedef struct {
+  box_label box;
+  float predict;
+} box_label_predict;
+
 void free_data(data d);
 
 pthread_t load_data(load_args args);

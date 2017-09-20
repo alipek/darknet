@@ -11,16 +11,19 @@
 #include "opencv2/highgui/highgui_c.h"
 #include "opencv2/core/core_c.h"
 #include "opencv2/core/version.hpp"
+#include "data.h"
+
 #ifndef CV_VERSION_EPOCH
 #include "opencv2/videoio/videoio_c.h"
 #pragma comment(lib, "opencv_world320.lib")  
 #else
-#pragma comment(lib, "opencv_core2413.lib")  
-#pragma comment(lib, "opencv_imgproc2413.lib")  
-#pragma comment(lib, "opencv_highgui2413.lib") 
+#pragma comment(lib, "opencv_core2413.lib")
+#pragma comment(lib, "opencv_imgproc2413.lib")
+#pragma comment(lib, "opencv_highgui2413.lib")
 #endif
 #endif
 static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
+
 
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear)
 {
@@ -288,7 +291,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile)
         fps = calloc(classes, sizeof(FILE *));
         for(j = 0; j < classes; ++j){
             snprintf(buff, 1024, "%s/%s%s.txt", prefix, base, names[j]);
-            fps[j] = fopen(buff, "w");
+            fps[j] = fopen(buff, "w+");
         }
     }
 
@@ -361,7 +364,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile)
         if(fps) fclose(fps[j]);
     }
     if(coco){
-        fseek(fp, -2, SEEK_CUR); 
+        fseek(fp, -2, SEEK_CUR);
         fprintf(fp, "\n]\n");
         fclose(fp);
     }
@@ -417,7 +420,8 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
         find_replace(labelpath, "JPEGImages", "labels", labelpath);
         find_replace(labelpath, ".jpg", ".txt", labelpath);
         find_replace(labelpath, ".JPEG", ".txt", labelpath);
-	find_replace(labelpath, ".png", ".txt", labelpath);
+        find_replace(labelpath, ".jpeg", ".txt", labelpath);
+        find_replace(labelpath, ".png", ".txt", labelpath);
 
         int num_labels = 0;
         box_label *truth = read_boxes(labelpath, &num_labels);
@@ -507,6 +511,90 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     }
 }
 
+
+list *get_boxes_with_class_and_predict(box *boxes, float **probs, int total,
+                                       int classes, int w, int h) {
+    list *list = make_list();
+    int i, j;
+    for (i = 0; i < total; ++i) {
+        float xmin = boxes[i].x - boxes[i].w / 2.;
+        float xmax = boxes[i].x + boxes[i].w / 2.;
+        float ymin = boxes[i].y - boxes[i].h / 2.;
+        float ymax = boxes[i].y + boxes[i].h / 2.;
+
+        if (xmin < 0) xmin = 0;
+        if (ymin < 0) ymin = 0;
+        if (xmax > w) xmax = w;
+        if (ymax > h) ymax = h;
+
+        box_label_predict *boxes_with_predict;
+        for (j = 0; j < classes; ++j) {
+            if (probs[i][j]) {
+                boxes_with_predict = malloc(sizeof(box_label_predict));
+                boxes_with_predict->predict = probs[i][j];
+                boxes_with_predict->box.left = xmin;
+                boxes_with_predict->box.right = xmax;
+                boxes_with_predict->box.top = ymin;
+                boxes_with_predict->box.bottom = xmax;
+                boxes_with_predict->box.id = j;
+                list_insert(list, boxes_with_predict);
+            }
+        }
+    }
+    return list;
+}
+
+list *predict_boxes_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh) {
+    list *options = read_data_cfg(datacfg);
+    char *name_list = option_find_str(options, "names", "data/names.list");
+    char **names = get_labels(name_list);
+
+    image **alphabet = load_alphabet();
+    network net = parse_network_cfg(cfgfile);
+    if (weightfile) {
+        load_weights(&net, weightfile);
+    }
+    set_batch_network(&net, 1);
+    srand(2222222);
+    clock_t time;
+    char buff[256];
+    char *input = buff;
+    int j;
+    float nms = .4;
+    if (filename) {
+        strncpy(input, filename, 256);
+    } else {
+        printf("Enter Image Path: ");
+        fflush(stdout);
+        input = fgets(input, 256, stdin);
+
+        if (!input) return;
+        strtok(input, "\n");
+    }
+    image im = load_image_color(input, 0, 0);
+    image sized = resize_image(im, net.w, net.h);
+    layer l = net.layers[net.n - 1];
+
+    box *boxes = calloc(l.w * l.h * l.n, sizeof(box));
+    float **probs = calloc(l.w * l.h * l.n, sizeof(float *));
+    for (j = 0; j < l.w * l.h * l.n; ++j) probs[j] = calloc(l.classes, sizeof(float *));
+
+    float *X = sized.data;
+    time = clock();
+    network_predict(net, X);
+    printf("%s: Predicted in %f seconds.\n", input, sec(clock() - time));
+    get_region_boxes(l, 1, 1, thresh, probs, boxes, 0, 0);
+    if (nms) do_nms_sort(boxes, probs, l.w * l.h * l.n, l.classes, nms);
+    list *list = get_boxes_with_class_and_predict(boxes, probs, l.w * l.h * l.n, l.classes, im.w, im.h);
+
+    free_image(im);
+    free_image(sized);
+    free(boxes);
+    free_ptrs((void **) probs, l.w * l.h * l.n);
+    return list;
+}
+
+
 void run_detector(int argc, char **argv)
 {
 	char *out_filename = find_char_arg(argc, argv, "-out_filename", 0);
@@ -515,7 +603,7 @@ void run_detector(int argc, char **argv)
     int cam_index = find_int_arg(argc, argv, "-c", 0);
     int frame_skip = find_int_arg(argc, argv, "-s", 0);
     if(argc < 4){
-        fprintf(stderr, "usage: %s %s [train/test/valid] [cfg] [weights (optional)]\n", argv[0], argv[1]);
+        fprintf(stderr, "usage: %s %s [train/test/valid/boxes] [cfg] [weights (optional)]\n", argv[0], argv[1]);
         return;
     }
     char *gpu_list = find_char_arg(argc, argv, "-gpus", 0);
@@ -551,7 +639,20 @@ void run_detector(int argc, char **argv)
     else if(0==strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear);
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights);
     else if(0==strcmp(argv[2], "recall")) validate_detector_recall(datacfg, cfg, weights);
-    else if(0==strcmp(argv[2], "demo")) {
+    else if (0 == strcmp(argv[2], "boxes")) {
+
+        list *options = read_data_cfg(datacfg);
+        char *name_list = option_find_str(options, "names", "data/names.list");
+        char **names = get_labels(name_list);
+        list *boxes_list = predict_boxes_detector(datacfg, cfg, weights, filename, thresh);
+        box_label_predict **boxes = (box_label_predict **) list_to_array(boxes_list);
+        int N = boxes_list->size;
+        int i;
+        for (i = 0; i < N; i++) {
+            printf("%s %f %f %f %f %f \n", names[boxes[i]->box.id],boxes[i]->predict, boxes[i]->box.left,
+                   boxes[i]->box.top, boxes[i]->box.right, boxes[i]->box.bottom);
+        }
+    } else if (0 == strcmp(argv[2], "demo")) {
         list *options = read_data_cfg(datacfg);
         int classes = option_find_int(options, "classes", 20);
         char *name_list = option_find_str(options, "names", "data/names.list");
@@ -559,3 +660,5 @@ void run_detector(int argc, char **argv)
         demo(cfg, weights, thresh, cam_index, filename, names, classes, frame_skip, prefix, out_filename);
     }
 }
+
+
