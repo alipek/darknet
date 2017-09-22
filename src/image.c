@@ -522,13 +522,8 @@ void show_image_cv(image p, const char *name)
 void show_image_cv_ipl(IplImage *disp, const char *name, const char *out_filename)
 {
 	if (disp == NULL) return;
-	char buff[256];
-	//sprintf(buff, "%s (%d)", name, windows);
-	sprintf(buff, "%s", name);
-	cvNamedWindow(buff, CV_WINDOW_NORMAL);
-	//cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
+
 	++windows;
-	cvShowImage(buff, disp);
 
 	if(out_filename)
 	{
@@ -548,7 +543,15 @@ void show_image_cv_ipl(IplImage *disp, const char *name, const char *out_filenam
 
 		cvWriteFrame(output_video, disp);	// comment this line to improve FPS !!!
 		printf("\n cvWriteFrame \n");
-	}
+	}else{
+        char buff[256];
+        //sprintf(buff, "%s (%d)", name, windows);
+        sprintf(buff, "%s", name);
+        cvNamedWindow(buff, CV_WINDOW_NORMAL);
+        //cvMoveWindow(buff, 100*(windows%10) + 200*(windows/10), 100*(windows%10));
+        cvShowImage(buff, disp);
+
+    }
 
 	cvReleaseImage(&disp);
 }

@@ -25,6 +25,7 @@
 #include "opencv2/videoio/videoio_c.h"
 #endif
 image get_image_from_stream(CvCapture *cap);
+CvCapture *captureVideo(char *filename);
 
 static char **demo_names;
 static image **demo_alphabet;
@@ -53,6 +54,10 @@ image get_image_from_stream_resize(CvCapture *cap, int w, int h, IplImage** in_i
 IplImage* in_img;
 IplImage* det_img;
 IplImage* show_img;
+
+CvCapture *captureVideo(char *filename){
+    return cvCaptureFromFile(filename);
+}
 
 void *fetch_in_thread(void *ptr)
 {
@@ -101,7 +106,7 @@ void *detect_in_thread(void *ptr)
     demo_index = (demo_index + 1)%FRAMES;
 	    
 	//draw_detections(det, l.w*l.h*l.n, demo_thresh, boxes, probs, demo_names, demo_alphabet, demo_classes);
-	draw_detections_cv(det_img, l.w*l.h*l.n, demo_thresh, boxes, probs, demo_names, demo_alphabet, demo_classes);
+    draw_detections_cv(det_img, l.w*l.h*l.n, demo_thresh, boxes, probs, demo_names, demo_alphabet, demo_classes);
 
 	return 0;
 }
@@ -178,7 +183,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     }
 
     int count = 0;
-    if(!prefix){
+    if(!prefix && !out_filename){
         cvNamedWindow("Demo", CV_WINDOW_NORMAL); 
         cvMoveWindow("Demo", 0, 0);
         cvResizeWindow("Demo", 1352, 1013);
@@ -189,10 +194,11 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     while(1){
         ++count;
         if(1){
+
             if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
             if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
 
-            if(!prefix){                
+            if(!prefix){
 				//show_image(disp, "Demo");
 				show_image_cv_ipl(show_img, "Demo", out_filename);
                 int c = cvWaitKey(1);
@@ -207,7 +213,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
                 sprintf(buff, "%s_%08d", prefix, count);
                 save_image(disp, buff);
             }
-
+            printf("#frame#%d",count);
             pthread_join(fetch_thread, 0);
             pthread_join(detect_thread, 0);
 
